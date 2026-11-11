@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biblioteca Senac | Acervo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">S</span><span><b>Biblioteca</b><small>SENAC • SISTEMA DE ACERVO</small></span></a>
+  <button class="theme-toggle" id="themeToggle" type="button">☾ <span>Modo escuro</span></button>
+</header>
+<main class="container">
+  <section class="welcome">
+    <div><p class="eyebrow">PAINEL DA BIBLIOTECA</p><h1>Acervo e empréstimos</h1><p class="muted">Gerencie os livros e acompanhe a circulação do acervo.</p></div>
+    <span class="today" id="today"></span>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}<div class="messages">{% for category, message in messages %}<div class="message {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+  {% endwith %}
+
+  <section class="stats">
+    <article class="stat-card"><span class="stat-icon blue">▤</span><div><small>Livros cadastrados</small><strong>{{ total_livros }}</strong></div></article>
+    <article class="stat-card"><span class="stat-icon orange">↗</span><div><small>Em empréstimo</small><strong>{{ total_emprestados }}</strong></div></article>
+    <article class="stat-card"><span class="stat-icon green">✓</span><div><small>Exemplares disponíveis</small><strong>{{ livros|sum(attribute='disponiveis') }}</strong></div></article>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading"><div><h2>Catálogo de livros</h2><p class="muted">Consulte, cadastre, edite ou remova títulos.</p></div><button class="primary" onclick="abrirModal('modalLivro')">＋ Adicionar livro</button></div>
+    <div class="toolbar"><input id="search" type="search" placeholder="Buscar por título, autor ou categoria..."><span class="muted">{{ livros|length }} título(s)</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Livro</th><th>Categoria</th><th>Exemplares</th><th>Disponibilidade</th><th>Ações</th></tr></thead>
+      <tbody id="bookRows">
+      {% for livro in livros %}
+      <tr data-search="{{ (livro.titulo ~ ' ' ~ livro.autor ~ ' ' ~ livro.categoria)|lower }}">
+        <td><div class="book-title">{{ livro.titulo }}</div><small class="muted">{{ livro.autor }}</small></td>
+        <td><span class="category">{{ livro.categoria }}</span></td>
+        <td>{{ livro.exemplares }}</td>
+        <td>{% if livro.disponiveis > 0 %}<span class="status available">{{ livro.disponiveis }} disponível(is)</span>{% else %}<span class="status unavailable">Indisponível</span>{% endif %}</td>
+        <td class="actions">
+          <button class="icon-btn" title="Editar" onclick='editarLivro({{ dict(livro)|tojson }})'>✎</button>
+          <form method="post" action="{{ url_for('remover_livro', livro_id=livro.id) }}" onsubmit="return confirm('Remover este livro?')"><button class="icon-btn danger" title="Remover">×</button></form>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="empty">Nenhum livro cadastrado.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="two-columns">
+    <section class="panel">
+      <div class="section-heading"><div><h2>Novo empréstimo</h2><p class="muted">Registre a retirada de um exemplar.</p></div></div>
+      <form class="form-grid" method="post" action="{{ url_for('adicionar_emprestimo') }}">
+        <label>Livro<select name="livro_id" required>{% for livro in livros if livro.disponiveis > 0 %}<option value="{{ livro.id }}">{{ livro.titulo }} ({{ livro.disponiveis }} disponível(is))</option>{% endfor %}</select></label>
+        <label>Nome do aluno<input name="aluno" placeholder="Ex.: Ana Souza" required></label>
+        <button class="primary full" type="submit" {% if not (livros|selectattr('disponiveis', 'gt', 0)|list) %}disabled{% endif %}>Registrar empréstimo</button>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><div><h2>API do sistema</h2><p class="muted">Dados do catálogo em formato JSON.</p></div><span class="api-badge">GET</span></div>
+      <p class="api-description">A rota abaixo retorna os livros, quantidades e disponibilidade atualizados.</p>
+      <a class="api-link" href="/api/livros" target="_blank">/api/livros ↗</a>
+      <a class="api-link secondary-link" href="/api/emprestimos" target="_blank">/api/emprestimos ↗</a>
+    </section>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading"><div><h2>Histórico de empréstimos</h2><p class="muted">Acompanhe retiradas e devoluções.</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Livro</th><th>Aluno</th><th>Data de retirada</th><th>Status</th><th>Ação</th></tr></thead><tbody>
+      {% for e in emprestimos %}
+      <tr><td class="book-title">{{ e.livro_titulo }}</td><td>{{ e.aluno }}</td><td>{{ e.data_emprestimo }}</td>
+      <td>{% if e.status == 'Emprestado' %}<span class="status unavailable">Emprestado</span>{% else %}<span class="status available">Devolvido</span>{% endif %}</td>
+      <td class="actions">
+        {% if e.status == 'Emprestado' %}<form method="post" action="{{ url_for('devolver_emprestimo', emprestimo_id=e.id) }}"><button class="small-btn">Registrar devolução</button></form>{% endif %}
+        <form method="post" action="{{ url_for('remover_emprestimo', emprestimo_id=e.id) }}" onsubmit="return confirm('Excluir este registro do histórico?')"><button class="icon-btn danger" title="Excluir registro">×</button></form>
+      </td></tr>
+      {% else %}<tr><td colspan="5" class="empty">Ainda não há empréstimos.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</main>
+
+<div class="modal-backdrop" id="modalLivro"><div class="modal"><div class="modal-head"><div><p class="eyebrow">ACERVO</p><h2 id="modalTitle">Adicionar livro</h2></div><button class="close" onclick="fecharModal('modalLivro')">×</button></div>
+<form id="bookForm" method="post" action="{{ url_for('adicionar_livro') }}" class="form-grid">
+  <label>Título<input name="titulo" required></label><label>Autor<input name="autor" required></label>
+  <label>Categoria<input name="categoria" placeholder="Ex.: Literatura"></label><label>ISBN (opcional)<input name="isbn"></label>
+  <label>Quantidade de exemplares<input name="exemplares" type="number" min="0" value="1" required></label>
+  <div class="modal-actions"><button type="button" class="secondary" onclick="fecharModal('modalLivro')">Cancelar</button><button class="primary" type="submit">Salvar livro</button></div>
+</form></div></div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body></html>
